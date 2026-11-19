@@ -23,6 +23,12 @@
 .avatar-editor input{display:none}
 .profile-avatar-button{position:relative;border:0;background:transparent;padding:0;flex-shrink:0}
 .profile-avatar-button::after{content:"✎";position:absolute;right:0;bottom:0;border-radius:50%;background:var(--fg);color:var(--bg);width:25px;height:25px;display:grid;place-items:center;font-size:14px}
+.other-profile-tabs{display:flex;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:18px}
+.other-profile-tabs button{flex:1;background:transparent;color:var(--muted);border:0;padding:15px 8px;font-weight:650;cursor:pointer}
+.other-profile-tabs button.active{color:var(--fg);border-bottom:2px solid var(--fg)}
+.other-experiences{padding:14px 0}.other-experience{padding:16px 8px;border-bottom:1px solid var(--line)}
+.other-experience p{margin:7px 0}.other-experience small{color:var(--muted)}
+.profile-numbers{gap:12px;flex-wrap:wrap}
 </style><style>
 .instantes-row{display:flex;gap:17px;overflow-x:auto;padding:18px 18px 14px;scrollbar-width:thin}
 .instante-circle{display:flex;flex-direction:column;align-items:center;gap:7px;flex:0 0 74px;border:0;background:transparent;color:var(--fg);font:inherit;cursor:pointer}
@@ -91,7 +97,7 @@ function notifications(){return `<div class="section"><h1 class="heading">Notifi
 /* Integração Supabase — inicialização após todos os módulos */
 
 // ===== 1. Estado remoto e utilitários =====
-const cloud = {instantes:[],posts:[],experiences:[],likes:{},saved:{},comments:{},profiles:{},following:[],ready:false};
+const cloud = {instantes:[],posts:[],experiences:[],likes:{},saved:{},comments:{},profiles:{},following:[],publicExperiences:[],socialFollows:[],ready:false};
 const cloudDate = iso => new Date(iso).toLocaleDateString('pt-BR');
 const cloudError = error => {console.error('VYVA Supabase:',error);toast('Erro: '+(error?.message||'tente novamente'));};
 const profileName = id => cloud.profiles[id]?.display_name || 'Usuário VYVA';
@@ -107,9 +113,11 @@ async function loadCloud(){
     sb.from('comments').select('id,post_id,author_id,body,created_at').order('created_at',{ascending:true}).limit(500),
     sb.from('profiles').select('id,display_name,bio,avatar_path,username'),
     sb.from('follows').select('following_id').eq('follower_id',uid),
-    sb.from('instantes').select('id,author_id,image_path,caption,created_at,expires_at').gt('expires_at',new Date().toISOString()).order('created_at',{ascending:false}).limit(100)
+    sb.from('instantes').select('id,author_id,image_path,caption,created_at,expires_at').gt('expires_at',new Date().toISOString()).order('created_at',{ascending:false}).limit(100),
+    sb.from('experiences').select('id,creator_id,title,description,status,visibility,planned_for,created_at').eq('visibility','public').order('created_at',{ascending:false}).limit(500),
+    sb.from('follows').select('follower_id,following_id').limit(5000)
   ]);
-  const labels=['posts','experiences','post_likes','saved_posts','comments','profiles','follows','instantes'];
+  const labels=['posts','experiences','post_likes','saved_posts','comments','profiles','follows','instantes','publicExperiences','socialFollows'];
   results.forEach((r,i)=>{if(r.error)console.warn('Falha ao carregar '+labels[i],r.error)});
   cloud.posts=results[0].data||[];
   cloud.experiences=results[1].data||[];
@@ -119,6 +127,8 @@ async function loadCloud(){
   cloud.profiles={};(results[5].data||[]).forEach(x=>cloud.profiles[x.id]=x);
   cloud.following=(results[6].data||[]).map(x=>x.following_id);
   cloud.instantes=results[7].data||[];
+  cloud.publicExperiences=results[8].data||[];
+  cloud.socialFollows=results[9].data||[];
   cloud.ready=true;
   const myProfile=cloud.profiles[uid];
   if(myProfile?.display_name)state.name=myProfile.display_name;
@@ -252,15 +262,24 @@ let selectedProfileId=null;
 function openOtherProfile(id){
  if(!cloud.profiles[id]){toast('Perfil não encontrado');return}
  if(id===authUser?.id){go('profile');return}
- selectedProfileId=id;go('other-profile');
+ selectedProfileId=id;otherProfileTab='posts';go('other-profile');
 }
+let otherProfileTab='posts';
+function showOtherProfileTab(tab){otherProfileTab=tab;render()}
 function otherProfile(){
  const p=cloud.profiles[selectedProfileId];
  if(!p)return `<div class="section"><button class="pill" onclick="go('search')">Voltar</button><p>Perfil indisponível.</p></div>`;
  const posts=cloud.posts.filter(x=>x.author_id===selectedProfileId&&x.visibility!=='private');
+ const experiences=cloud.publicExperiences.filter(x=>x.creator_id===selectedProfileId);
+ const followers=cloud.socialFollows.filter(x=>x.following_id===selectedProfileId).length;
+ const followingCount=cloud.socialFollows.filter(x=>x.follower_id===selectedProfileId).length;
  const following=cloud.following.includes(selectedProfileId);
- return `<div class="profile-screen"><div class="profile-top"><button class="ico" onclick="go('search')" aria-label="Voltar">${icon('arrow-left')}</button><b class="profile-handle">@${esc(p.username||'usuario')}</b></div><div class="profile-summary"><img class="profile-avatar-new" src="${esc(avatarUrl(p.avatar_path))}" alt="Foto de perfil"><div class="profile-numbers"><div><strong>${posts.length}</strong><span>publicações</span></div></div></div><div class="profile-bio"><b>${esc(p.display_name||'Usuário VYVA')}</b><p>${esc(p.bio||'')}</p></div><div class="profile-actions"><button onclick="followOtherProfile()">${following?'Seguindo':'Seguir'}</button></div><div class="profile-tabline"><span>${icon('camera')} Publicações</span></div><div class="profile-grid">${posts.filter(x=>x.image_path).map(x=>`<div class="profile-tile"><img src="${esc(photoUrl(x.image_path))}" alt="Publicação"></div>`).join('')||'<div class="profile-empty">Nenhuma publicação pública ainda.</div>'}</div></div>`;
+ const content=otherProfileTab==='experiences'
+  ? `<div class="other-experiences">${experiences.map(x=>`<div class="other-experience"><b>${esc(x.title)}</b>${x.description?`<p>${esc(x.description)}</p>`:''}<small>${x.status==='done'?'Realizada':x.status==='doing'?'Em andamento':'Quero viver'}</small></div>`).join('')||'<p class="profile-empty">Nenhuma experiência pública ainda.</p>'}</div>`
+  : `<div class="profile-grid">${posts.filter(x=>x.image_path).map(x=>`<div class="profile-tile"><img src="${esc(photoUrl(x.image_path))}" alt="Publicação"></div>`).join('')||'<div class="profile-empty">Nenhuma publicação pública ainda.</div>'}</div>`;
+ return `<div class="profile-screen"><div class="profile-top"><button class="ico" onclick="go('search')" aria-label="Voltar">${icon('arrow-left')}</button><b class="profile-handle">${esc(p.display_name||'Perfil')}</b></div><div class="profile-summary"><img class="profile-avatar-new" src="${esc(avatarUrl(p.avatar_path))}" alt="Foto de perfil"><div class="profile-numbers"><div><strong>${posts.length}</strong><span>publicações</span></div><div><strong>${experiences.length}</strong><span>experiências</span></div><div><strong>${followers}</strong><span>seguidores</span></div><div><strong>${followingCount}</strong><span>seguindo</span></div></div></div><div class="profile-bio"><b>${esc(p.display_name||'Usuário VYVA')}</b><p>${esc(p.bio||'')}</p></div><div class="profile-actions"><button onclick="followOtherProfile()">${following?'Seguindo':'Seguir'}</button></div><div class="other-profile-tabs"><button class="${otherProfileTab==='posts'?'active':''}" onclick="showOtherProfileTab('posts')">Publicações</button><button class="${otherProfileTab==='experiences'?'active':''}" onclick="showOtherProfileTab('experiences')">Experiências</button></div>${content}</div>`;
 }
+
 async function followOtherProfile(){
  const id=selectedProfileId;if(!id||!authUser)return;
  const following=cloud.following.includes(id);
