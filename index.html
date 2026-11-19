@@ -557,4 +557,53 @@ function searchChatPeople(value){
 }
 const originalMessages=messages;
 messages=function(){const html=originalMessages();if(social.chatWith)return html;return html.replace('<h3>Conversas</h3>','<h3>Conversas</h3><input class="field" placeholder="Buscar pessoa para conversar" oninput="searchChatPeople(this.value)"><div id="chat-person-results"></div>')};
+
+/* VYVA 3.0: respostas, compartilhamento no chat, marcações e leitura */
+let sharedPostForChat=null;
+function renderMentioned(text){
+ const safe=esc(text||'');return safe.replace(/(^|\s)@([a-z0-9_]{3,24})\b/gi,(all,space,name)=>{const p=Object.values(cloud.profiles).find(v=>v.username?.toLowerCase()===name.toLowerCase());return p&&!cloud.blocked.includes(p.id)?`${space}<button class="mention-link" onclick="openOtherProfile('${p.id}')">@${esc(name)}</button>`:all});
+}
+function replyToInstante(){
+ const x=cloud.instantes.find(v=>v.id===viewingInstanteId);if(!x||x.author_id===authUser?.id)return;
+ if(cloud.blocked.includes(x.author_id))return toast('Não é possível responder');
+ social.chatWith=x.author_id;go('messages');
+ const input=document.querySelector('.comment-form input[name="body"]');if(input){input.value='Respondendo ao Instante: ';input.focus()}
+}
+const baseInstanteViewer=instanteViewer;
+instanteViewer=function(){let html=baseInstanteViewer();const x=cloud.instantes.find(v=>v.id===viewingInstanteId);if(!x)return html;
+ if(x.author_id!==authUser?.id)html=html.replace('<div class="instante-bottom">','<div style="padding:8px 16px"><button class="btn alt" onclick="replyToInstante()">Responder por mensagem</button></div><div class="instante-bottom">');
+ return html.replace(`<div class="instante-caption">${esc(x.caption)}</div>`,`<div class="instante-caption">${renderMentioned(x.caption)}</div>`);
+};
+function sharePostToChat(id){sharedPostForChat=id;social.chatWith=null;go('messages');toast('Selecione uma conversa para enviar a publicação')}
+const messagesBeforeShare=messages;
+messages=function(){let html=messagesBeforeShare();if(sharedPostForChat){
+ if(social.chatWith)html=html.replace('</h3><div class="chat-messages"',`</h3><div style="padding:8px"><button class="btn alt" onclick="sendSharedPost()">Enviar publicação nesta conversa</button><button class="pill" onclick="sharedPostForChat=null;render()">Cancelar</button></div><div class="chat-messages"`);
+ else html=html.replace('<h1 class="heading">Mensagens</h1>','<h1 class="heading">Compartilhar publicação</h1><p class="sub">Escolha uma pessoa ou conversa para enviar.</p>');
+ }return html;
+};
+async function sendSharedPost(){if(!social.chatWith||!sharedPostForChat)return;const id=sharedPostForChat;const url=location.origin+location.pathname+'#post-'+id;const {error}=await sb.from('direct_messages').insert({sender_id:authUser.id,recipient_id:social.chatWith,body:'Compartilhou uma publicação: '+url});if(error)return cloudError(error);sharedPostForChat=null;await loadCloud();toast('Publicação enviada')}
+const priorPostCard=postCard;
+postCard=function(p){let html=priorPostCard(p);const anchor=`<button class="ico" onclick="sharePost('${p.id}')" aria-label="Compartilhar">${icon('send')}</button>`;
+ if(html.includes(anchor))html=html.replace(anchor,anchor+`<button class="ico" onclick="sharePostToChat('${p.id}')" aria-label="Enviar no chat">${icon('message')}</button>`);
+ return html.replace(`${esc(p.caption)}`,`${renderMentioned(p.caption)}`);
+};
+const beforeMessagesReload=loadCloud;
+loadCloud=async function(){await beforeMessagesReload();if(!authUser)return;
+ const unread=social.messages.filter(m=>m.recipient_id===authUser.id&&!m.read_at).length;
+ const headerBell=document.querySelector('header .actions button[aria-label="Mensagens"]');if(headerBell)headerBell.title=unread?`${unread} mensagens não lidas`:'Mensagens';
+};
+const oldStartChat=startChat;
+startChat=function(id){oldStartChat(id);markThreadRead(id)};
+async function markThreadRead(id){if(!id||!authUser)return;await sb.from('direct_messages').update({read_at:new Date().toISOString()}).eq('recipient_id',authUser.id).eq('sender_id',id).is('read_at',null)}
+const oldRenderChat=render;
+render=function(){oldRenderChat();if(page==='messages'&&social.chatWith)markThreadRead(social.chatWith)};
+const oldExperienceCard=experienceCard;
+experienceCard=function(x){return oldExperienceCard(x).replace(`${esc(x.description||'')}`,`${renderMentioned(x.description||'')}`)};
+function reportProfile(id){
+ document.getElementById('safety-overlay')?.remove();
+ const overlay=document.createElement('div');overlay.className='post-options-overlay';overlay.id='report-overlay';overlay.innerHTML=`<form class="post-options-dialog" onsubmit="submitProfileReport(event,'${id}')"><h3>Denunciar perfil</h3><select class="field" name="reason" required><option value="spam">Spam</option><option value="harassment">Assédio</option><option value="impersonation">Perfil falso</option><option value="inappropriate">Conteúdo inadequado</option><option value="other">Outro</option></select><textarea class="field" name="details" maxlength="1000" placeholder="Detalhes (opcional)"></textarea><button class="btn" type="submit">Enviar denúncia</button><button type="button" class="btn alt" onclick="document.getElementById('report-overlay')?.remove()">Cancelar</button></form>`;overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};document.body.append(overlay)
+}
+async function submitProfileReport(event,id){event.preventDefault();const f=event.target;const {error}=await sb.from('user_reports').insert({reporter_id:authUser.id,reported_id:id,reason:f.elements.reason.value,details:f.elements.details.value.trim()});if(error)return cloudError(error);document.getElementById('report-overlay')?.remove();toast('Denúncia enviada para análise')}
+const originalSafetyMenu=profileSafetyMenu;
+profileSafetyMenu=function(id){originalSafetyMenu(id);const el=document.getElementById('safety-overlay');if(el)el.innerHTML=el.innerHTML.replace(`document.getElementById('safety-overlay')?.remove();toast('Denúncias: recurso em preparação')`,`reportProfile('${id}')`)};
 </script></body></html>
