@@ -84,13 +84,10 @@ function filterPeople(value){
  area.innerHTML=matches.length?matches.map(p=>`<div class="search-person"><button type="button" class="search-person-open" onclick="openOtherProfile('${p.id}')" aria-label="Abrir perfil"><img src="${esc(avatarUrl(p.avatar_path))}" alt="Foto de perfil"></button><div class="search-person-info" onclick="openOtherProfile('${p.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')openOtherProfile('${p.id}')"><b>${esc(p.display_name||'Usuário VYVA')}</b><small>@${esc(p.username||'usuario')}</small></div><button type="button" class="search-follow" onclick="followFromSearch('${p.id}')">${cloud.following.includes(p.id)?'Seguindo':'Seguir'}</button></div>`).join(''):'<p class="sub" style="margin-top:22px">Nenhuma pessoa encontrada.</p>';
 }
 async function followFromSearch(id){
- if(!sb||!authUser)return;
- const following=cloud.following.includes(id);
- const {error}=following?await sb.from('follows').delete().eq('follower_id',authUser.id).eq('following_id',id):await sb.from('follows').insert({follower_id:authUser.id,following_id:id});
- if(error){cloudError(error);return}
- const query=document.getElementById('searchtext')?.value||'';
- await loadCloud();
- const input=document.getElementById('searchtext');if(input){input.value=query;filterPeople(query)}
+  const query=document.getElementById('searchtext')?.value||'';
+  if(!await changeFollow(id))return;
+  const input=document.getElementById('searchtext');
+  if(input){input.value=query;filterPeople(query)}
 }
 function create(){return `<div class="section"><h1 class="heading">Criar</h1><p class="sub">O que você quer fazer?</p><div class="tabs"><button class="pill ${createType==='experiencia'?'selected':''}" onclick="createType='experiencia';render()">Planejar algo</button><button class="pill ${createType==='post'?'selected':''}" onclick="createType='post';render()">Postar foto</button><button class="pill ${createType==='instante'?'selected':''}" onclick="createType='instante';render()">Instante</button></div><p class="notice">${createType==='instante'?'Compartilhe um momento que desaparece do feed após 24 horas.':createType==='experiencia'?'Planeje algo que você ainda quer viver. Guarde a ideia e organize para fazer depois.':'Compartilhe algo que já aconteceu. Sua foto aparecerá no feed e no calendário de memórias.'}</p>${createType==='instante'?`<label class="label">Foto do seu Instante</label><p class="mini">Visível por 24 horas. Uma foto por Instante.</p><div class="photo-choices"><button class="btn alt" type="button" onclick="document.getElementById('instante-gallery').click()">Escolher da galeria</button><button class="btn alt" type="button" onclick="document.getElementById('instante-camera').click()">Tirar foto agora</button></div><input class="photo-file" id="instante-gallery" type="file" accept="image/jpeg,image/png,image/webp" onchange="selectInstantePhoto(event)"><input class="photo-file" id="instante-camera" type="file" accept="image/*" capture="environment" onchange="selectInstantePhoto(event)"><div id="instante-preview"></div><label class="label">Legenda (opcional)</label><textarea class="field" id="instante-caption" maxlength="220" rows="2" placeholder="O que está acontecendo?"></textarea><button class="btn" id="instante-publish" onclick="publishInstante()">Publicar Instante →</button>`:createType==='experiencia'?`<label class="label">O que você quer viver?"</label><input class="field" id="exptitle" placeholder="Ex.: Fazer uma trilha com amigos"><label class="label">Descreva sua ideia</label><textarea class="field" id="expdesc" rows="3" placeholder="O que torna essa experiência especial?"></textarea><label class="label">Quando?</label><select class="field" id="expwhen"><option>Sem data definida</option><option>Em breve</option><option>Este mês</option><option>Neste ano</option></select><label class="label">Quem pode ver?</label><select class="field" id="expprivacy"><option value="private">Só eu</option><option value="friends">Amigos (em desenvolvimento)</option><option value="public">Público</option></select><div class="notice">Você poderá convidar pessoas quando ativarmos as contas reais e os convites pelo Supabase.</div><button class="btn" onclick="addExperience()">Criar experiência →</button>`:`<label class="label">Compartilhe um momento</label><textarea class="field" id="caption" rows="4" placeholder="O que você viveu hoje?"></textarea><label class="label">Marcar pessoas (demonstração)</label><input class="field" id="tags" placeholder="@usuario, @amiga"><label class="label">Música da publicação (referência)</label><input class="field" id="music" placeholder="Nome da música e artista"><p class="mini">A música será exibida como texto. Reprodução e catálogo exigem licenciamento e integração.</p><label class="label">Adicionar foto</label><div class="photo-choices"><button class="btn alt" type="button" onclick="document.getElementById('photo-gallery').click()">Escolher da galeria</button><button class="btn alt" type="button" onclick="document.getElementById('photo-camera').click()">Tirar foto agora</button></div><input id="photo-gallery" class="photo-file" type="file" accept="image/jpeg,image/png,image/webp" onchange="loadPhoto(event)"><input id="photo-camera" class="photo-file" type="file" accept="image/*" capture="environment" onchange="loadPhoto(event)"><p class="mini">No computador, a opção de câmera depende do navegador.</p><div id="preview"></div><button class="btn" id="publish-post-btn" onclick="publish()">Publicar no meu feed →</button><p class="mini">As fotos serão enviadas para sua conta VYVA.</p>`}</div>`}
 function addExperience(){let title=$('exptitle').value.trim();if(!title)return toast('Escreva o nome da experiência');state.experiences.unshift({id:Date.now(),title,desc:$('expdesc').value.trim(),when:$('expwhen').value,privacy:$('expprivacy').value,status:'Quero viver',created:new Date().toISOString()});save();tab='Quero viver';go('life');toast('Experiência criada!')}
@@ -286,7 +283,42 @@ async function uploadAvatar(event){
   }finally{if(btn?.isConnected){btn.disabled=false;btn.textContent='Alterar foto'}input.value=''}
 }
 function friends(){const people=Object.values(cloud.profiles).filter(p=>p.id!==authUser?.id);return `<div class="section"><h1 class="heading">Pessoas</h1><p class="sub">Conheça quem também está no VYVA.</p>${people.map(p=>`<div class="listrow"><button class="search-person-open" onclick="openOtherProfile('${p.id}')"><img src="${esc(avatarUrl(p.avatar_path))}" alt="Foto de perfil"></button><div class="info" onclick="openOtherProfile('${p.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter')openOtherProfile('${p.id}')"><b>${esc(p.display_name||'Usuário')}</b><p>${esc(p.bio||'')}</p></div><button class="pill" onclick="toggleFollow('${p.id}')">${cloud.following.includes(p.id)?'Seguindo':'Seguir'}</button></div>`).join('')||'<div class="blank">Ainda não há outras pessoas cadastradas.</div>'}</div>`}
-async function toggleFollow(id){const following=cloud.following.includes(id),query=sb.from('follows');const {error}=following?await query.delete().eq('follower_id',authUser.id).eq('following_id',id):await query.insert({follower_id:authUser.id,following_id:id});if(error)return cloudError(error);await loadCloud();go('friends')}
+async function toggleFollow(id){
+  if(await changeFollow(id))go('friends');
+}
+
+const followBusy=new Set();
+async function changeFollow(id){
+  if(!sb||!authUser||!id||id===authUser.id||followBusy.has(id))return false;
+  followBusy.add(id);
+  const wasFollowing=cloud.following.includes(id);
+  try{
+    let result;
+    if(wasFollowing){
+      result=await sb.from('follows').delete()
+        .eq('follower_id',authUser.id).eq('following_id',id)
+        .select('follower_id,following_id');
+    }else{
+      result=await sb.from('follows').upsert(
+        {follower_id:authUser.id,following_id:id},
+        {onConflict:'follower_id,following_id',ignoreDuplicates:true}
+      );
+    }
+    if(result.error)throw result.error;
+    await loadCloud();
+    if(wasFollowing&&cloud.following.includes(id)){
+      toast('Não foi possível deixar de seguir. Verifique as permissões.');
+      return false;
+    }
+    return true;
+  }catch(error){
+    cloudError(error);
+    return false;
+  }finally{
+    followBusy.delete(id);
+  }
+}
+
 // Perfil público de outras pessoas (não altera a conta autenticada)
 let selectedProfileId=null;
 function openOtherProfile(id){
@@ -311,11 +343,8 @@ function otherProfile(){
 }
 
 async function followOtherProfile(){
- const id=selectedProfileId;if(!id||!authUser)return;
- const following=cloud.following.includes(id);
- const {error}=following?await sb.from('follows').delete().eq('follower_id',authUser.id).eq('following_id',id):await sb.from('follows').insert({follower_id:authUser.id,following_id:id});
- if(error)return cloudError(error);
- await loadCloud();go('other-profile');
+  const id=selectedProfileId;
+  if(await changeFollow(id))go('other-profile');
 }
 // ===== 6. Sessão: não compartilhar estado local entre contas =====
 async function initAuth(){if(!sb){render();return}try{const {data,error}=await sb.auth.getSession();if(error)throw error;if(data.session?.user)await cloudAcceptUser(data.session.user);else{authUser=null;page='auth';render()}sb.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){authUser=null;cloud.ready=false;cloud.posts=[];cloud.experiences=[];page='auth';render()}else if(event==='SIGNED_IN'&&session?.user&&session.user.id!==authUser?.id)cloudAcceptUser(session.user)})}catch(error){console.error(error);page='auth';render()}}
