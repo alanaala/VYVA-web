@@ -15,7 +15,15 @@
 .auth-links{display:grid;gap:8px;margin-top:16px}.auth-link{border:1px solid var(--line)!important;border-radius:12px!important;padding:12px!important;text-align:center}
 .auth-link:hover{background:var(--card)}.auth-wrap{margin:5vh auto}.auth-error{white-space:normal;overflow-wrap:anywhere}
 .busy{opacity:.6;pointer-events:none}.postimage{max-height:700px}
-.photo-choices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}.photo-choices .btn{margin:0;padding:12px 8px;font-size:12px}.photo-file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}</style></head><body><div class="app"><header class="top" id="header"></header><main id="main" class="main"></main><nav id="nav" class="nav"></nav></div><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script><script>
+.photo-choices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}.photo-choices .btn{margin:0;padding:12px 8px;font-size:12px}.photo-file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+/* Foto de perfil */
+.avatar-editor{display:flex;align-items:center;gap:14px;margin:15px 0 22px}
+.avatar-editor img{width:86px;height:86px;object-fit:cover;border-radius:50%;border:1px solid var(--line)}
+.avatar-editor button{border:1px solid var(--line);background:var(--card);color:var(--fg);padding:12px;border-radius:12px;font-weight:650}
+.avatar-editor input{display:none}
+.profile-avatar-button{position:relative;border:0;background:transparent;padding:0;flex-shrink:0}
+.profile-avatar-button::after{content:"✎";position:absolute;right:0;bottom:0;border-radius:50%;background:var(--fg);color:var(--bg);width:25px;height:25px;display:grid;place-items:center;font-size:14px}
+</style></head><body><div class="app"><header class="top" id="header"></header><main id="main" class="main"></main><nav id="nav" class="nav"></nav></div><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script><script>
 /* Preencha SOMENTE com a URL do projeto e a chave PUBLISHABLE do Supabase. */
 const SUPABASE_URL='https://thgyquycrxcxlgsrbbgs.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_b7JAHOLVNQ4gbq_icBoM7A__wI0xxSx';
@@ -122,10 +130,57 @@ function experienceDetail(){const x=cloud.experiences.find(x=>x.id===activeExper
 async function changeStatus(id,status){const {error}=await sb.from('experiences').update({status}).eq('id',id).eq('creator_id',authUser.id);if(error)return cloudError(error);await loadCloud();toast('Status atualizado')}
 async function deleteExperience(id){if(!confirm('Excluir esta experiência?'))return;const {error}=await sb.from('experiences').delete().eq('id',id).eq('creator_id',authUser.id);if(error)return cloudError(error);await loadCloud();go('life')}
 // ===== 5. Perfil e preferências =====
-function profile(){const mine=cloud.posts.filter(p=>p.author_id===authUser?.id),images=mine.filter(p=>p.image_path),p=cloud.profiles[authUser?.id]||{};return `<div class="profile-screen"><div class="profile-top"><b class="profile-handle">${esc(p.username||state.name)}</b><button class="ico profile-menu" onclick="go('settings')" aria-label="Configurações">${icon('menu')}</button></div><div class="profile-summary"><img class="profile-avatar-new" src="${pics.portrait}" alt="Avatar"><div class="profile-numbers"><div><strong>${mine.length}</strong><span>publicações</span></div><div><strong>${cloud.experiences.length}</strong><span>experiências</span></div><div><strong>${cloud.following.length}</strong><span>seguindo</span></div></div></div><div class="profile-bio"><b>${esc(state.name)}</b><p>${esc(p.bio||'Vivendo, aprendendo e experimentando.')}</p></div><div class="profile-actions"><button onclick="openSetting('edit-profile')">Editar perfil</button><button onclick="go('friends')">Pessoas</button></div><div class="profile-tabline"><span>${icon('camera')} Publicações</span></div><div class="profile-grid">${images.map(p=>`<div class="profile-tile"><img src="${esc(photoUrl(p.image_path))}" alt="Publicação"></div>`).join('')||'<div class="profile-empty">Suas fotos aparecerão aqui.</div>'}</div></div>`}
+function avatarUrl(path){return path ? photoUrl(path) : pics.portrait}
+function profile(){const mine=cloud.posts.filter(p=>p.author_id===authUser?.id),images=mine.filter(p=>p.image_path),p=cloud.profiles[authUser?.id]||{};return `<div class="profile-screen"><div class="profile-top"><b class="profile-handle">${esc(p.username||state.name)}</b><button class="ico profile-menu" onclick="go('settings')" aria-label="Configurações">${icon('menu')}</button></div><div class="profile-summary"><button class="profile-avatar-button" onclick="openSetting('edit-profile')" aria-label="Alterar foto do perfil"><img class="profile-avatar-new" src="${esc(avatarUrl(p.avatar_path))}" alt="Foto do perfil"></button><div class="profile-numbers"><div><strong>${mine.length}</strong><span>publicações</span></div><div><strong>${cloud.experiences.length}</strong><span>experiências</span></div><div><strong>${cloud.following.length}</strong><span>seguindo</span></div></div></div><div class="profile-bio"><b>${esc(state.name)}</b><p>${esc(p.bio||'Vivendo, aprendendo e experimentando.')}</p></div><div class="profile-actions"><button onclick="openSetting('edit-profile')">Editar perfil</button><button onclick="go('friends')">Pessoas</button></div><div class="profile-tabline"><span>${icon('camera')} Publicações</span></div><div class="profile-grid">${images.map(p=>`<div class="profile-tile"><img src="${esc(photoUrl(p.image_path))}" alt="Publicação"></div>`).join('')||'<div class="profile-empty">Suas fotos aparecerão aqui.</div>'}</div></div>`}
+
 async function updateProfile(){const name=$('newname')?.value.trim();if(!name)return toast('Digite seu nome');const {error}=await sb.from('profiles').update({display_name:name}).eq('id',authUser.id);if(error)return cloudError(error);state.name=name;await sb.auth.updateUser({data:{display_name:name}});await loadCloud();go('profile');toast('Perfil atualizado')}
 const oldOpenSetting=openSetting;
-openSetting=function(section){oldOpenSetting(section);if(section==='edit-profile'){const btn=document.querySelector('.settings-detail .btn');if(btn){btn.setAttribute('onclick','updateProfile()')}}};
+openSetting=function(section){
+  oldOpenSetting(section);
+  if(section==='edit-profile'){
+    const area=document.querySelector('.settings-detail');
+    if(!area)return;
+    const p=cloud.profiles[authUser?.id]||{};
+    const editor=document.createElement('div');
+    editor.className='avatar-editor';
+    editor.innerHTML=`<img id="avatar-preview" src="${esc(avatarUrl(p.avatar_path))}" alt="Foto de perfil"><div><button type="button" onclick="document.getElementById('avatar-file').click()">Alterar foto</button><input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" onchange="uploadAvatar(event)"><p class="mini">JPG, PNG ou WebP, até 5 MB.</p></div>`;
+    area.querySelector('h2')?.after(editor);
+    const btn=area.querySelector('.btn');
+    if(btn)btn.setAttribute('onclick','updateProfile()');
+  }
+};
+async function uploadAvatar(event){
+  const input=event.target, file=input.files?.[0];
+  if(!file||!authUser||!sb)return;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)){toast('Use JPG, PNG ou WebP');return}
+  if(file.size>5*1024*1024){toast('A foto deve ter até 5 MB');return}
+  const btn=document.querySelector('.avatar-editor button');
+  if(btn){btn.disabled=true;btn.textContent='Enviando...'}
+  let path=null;
+  try{
+    const image=await createImageBitmap(file);
+    const canvas=document.createElement('canvas');
+    const size=512;canvas.width=size;canvas.height=size;
+    const ctx=canvas.getContext('2d');
+    const crop=Math.min(image.width,image.height);
+    ctx.drawImage(image,(image.width-crop)/2,(image.height-crop)/2,crop,crop,0,0,size,size);
+    image.close();
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.85));
+    if(!blob)throw new Error('Não foi possível preparar a imagem');
+    path=`${authUser.id}/avatar-${crypto.randomUUID()}.jpg`;
+    const uploaded=await sb.storage.from('vyva-posts').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+    if(uploaded.error)throw uploaded.error;
+    const updated=await sb.from('profiles').update({avatar_path:path}).eq('id',authUser.id).select('id');
+    if(updated.error)throw updated.error;
+    if(!updated.data?.length)throw new Error('Não foi possível atualizar o perfil. Verifique as permissões.');
+    await loadCloud();
+    openSetting('edit-profile');
+    toast('Foto de perfil atualizada!');
+  }catch(error){
+    if(path)await sb.storage.from('vyva-posts').remove([path]);
+    cloudError(error);
+  }finally{if(btn?.isConnected){btn.disabled=false;btn.textContent='Alterar foto'}input.value=''}
+}
 function friends(){const people=Object.values(cloud.profiles).filter(p=>p.id!==authUser?.id);return `<div class="section"><h1 class="heading">Pessoas</h1><p class="sub">Conheça quem também está no VYVA.</p>${people.map(p=>`<div class="listrow"><div class="round">${esc((p.display_name||'V')[0].toUpperCase())}</div><div class="info"><b>${esc(p.display_name||'Usuário')}</b><p>${esc(p.bio||'')}</p></div><button class="pill" onclick="toggleFollow('${p.id}')">${cloud.following.includes(p.id)?'Seguindo':'Seguir'}</button></div>`).join('')||'<div class="blank">Ainda não há outras pessoas cadastradas.</div>'}</div>`}
 async function toggleFollow(id){const following=cloud.following.includes(id),query=sb.from('follows');const {error}=following?await query.delete().eq('follower_id',authUser.id).eq('following_id',id):await query.insert({follower_id:authUser.id,following_id:id});if(error)return cloudError(error);await loadCloud();go('friends')}
 // ===== 6. Sessão: não compartilhar estado local entre contas =====
